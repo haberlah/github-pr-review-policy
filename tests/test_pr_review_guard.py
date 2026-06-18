@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
 
@@ -114,14 +115,11 @@ class ReviewGuardTests(unittest.TestCase):
         self.assertTrue(str(self.guard.USER_POLICY_PATH).endswith(".config/github-pr-review-policy/review-policy.json"))
 
     def test_public_files_do_not_contain_private_repo_names(self) -> None:
-        forbidden = [
-            "Bella" + "-Slainte",
-            "Bella" + "Assist",
-            "Bella" + "med",
-            "MVP" + "-2",
-            "Mount" + "winter",
-            "Av" + "iato",
-        ]
+        forbidden = [value.strip() for value in os.environ.get("PR_REVIEW_POLICY_FORBIDDEN_TEXT", "").split(",")]
+        forbidden = [value for value in forbidden if value]
+        if not forbidden:
+            self.skipTest("Set PR_REVIEW_POLICY_FORBIDDEN_TEXT to scan for private terms")
+
         text = "\n".join(
             path.read_text(errors="ignore")
             for path in REPO_ROOT.rglob("*")

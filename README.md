@@ -80,6 +80,16 @@ For Claude Team/org distribution, package a zip:
 
 The zip contains the skill folder itself, suitable for org-level skill distribution workflows that accept a skill archive.
 
+To package an org-specific policy without committing it to the repo, pass a local policy file:
+
+```bash
+./scripts/package-claude-zip.sh \
+  --policy ~/.config/github-pr-review-policy/review-policy.json \
+  --suffix my-org
+```
+
+This creates `dist/github-pr-review-policy-my-org.zip` with that policy copied into `references/review-policy.json` inside the archive. The working tree stays generic.
+
 ## Configure Policy
 
 The bundled `references/review-policy.json` is safe by default:
@@ -181,6 +191,12 @@ Those files define policy and enforcement logic; bot-only approval is not enough
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m py_compile skills/github-pr-review-policy/scripts/pr_review_guard.py
+```
+
+To scan local changes for private terms before publishing, set a comma-separated term list:
+
+```bash
+PR_REVIEW_POLICY_FORBIDDEN_TEXT='PrivateOrg,PrivateRepo' python3 -m unittest discover -s tests -v
 ```
 
 The tests avoid live GitHub calls. Live guard commands require `gh` auth and a real PR.
