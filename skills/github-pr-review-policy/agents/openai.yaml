@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub PR Review Policy"
+  short_description: "Guarded AI PR review routing."
+  default_prompt: "Use $github-pr-review-policy to choose and verify an AI PR review."
