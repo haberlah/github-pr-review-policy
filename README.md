@@ -12,7 +12,7 @@ The skill is intentionally generic. Repository access, branch protection, requir
 - Routes re-review after fix commits back to the configured rerun provider, usually Codex.
 - Classifies review state from GitHub comments, PR reviews, inline comments, and check runs.
 - Treats generic no-findings responses as unverified unless there is current-head evidence.
-- Never posts comments, changes GitHub configuration, or merges PRs by itself.
+- The guard script never posts comments, changes GitHub configuration, or merges PRs by itself. It only prints JSON, and `--emit-comment-body` prints the exact comment body an agent or human may choose to post after checking `allow_trigger`.
 
 ## Repository Layout
 
