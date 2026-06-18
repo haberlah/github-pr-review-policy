@@ -110,6 +110,9 @@ class ReviewGuardTests(unittest.TestCase):
         self.assertFalse(policy["providers"]["claude"]["enabled"])
         self.assertEqual([], policy["providers"]["claude"]["allowedRepos"])
 
+    def test_user_policy_path_precedes_skill_default(self) -> None:
+        self.assertTrue(str(self.guard.USER_POLICY_PATH).endswith(".config/github-pr-review-policy/review-policy.json"))
+
     def test_public_files_do_not_contain_private_repo_names(self) -> None:
         forbidden = [
             "Bella" + "-Slainte",

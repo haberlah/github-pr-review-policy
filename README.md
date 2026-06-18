@@ -105,8 +105,9 @@ The guard loads policy in this order:
 
 1. `--policy /path/to/review-policy.json`
 2. `PR_REVIEW_POLICY_PATH`
-3. `skills/github-pr-review-policy/references/review-policy.json`
-4. built-in conservative defaults
+3. `~/.config/github-pr-review-policy/review-policy.json`
+4. `skills/github-pr-review-policy/references/review-policy.json`
+5. built-in conservative defaults
 
 Inspect the active policy:
 

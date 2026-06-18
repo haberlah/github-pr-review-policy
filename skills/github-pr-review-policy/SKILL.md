@@ -51,9 +51,10 @@ The guard loads policy in this order:
 
 1. `--policy /path/to/review-policy.json`
 2. `PR_REVIEW_POLICY_PATH`
-3. `<skill>/references/review-policy.json`
-4. `<skill>/references/review-policy.example.json`
-5. built-in conservative defaults
+3. `~/.config/github-pr-review-policy/review-policy.json`
+4. `<skill>/references/review-policy.json`
+5. `<skill>/references/review-policy.example.json`
+6. built-in conservative defaults
 
 Read `references/review-policy.example.json` before configuring a team policy. Claude is disabled unless the policy explicitly enables it and lists allowed repositories.
 

@@ -16,6 +16,7 @@ from typing import Any
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY_PATH = SKILL_ROOT / "references" / "review-policy.json"
 EXAMPLE_POLICY_PATH = SKILL_ROOT / "references" / "review-policy.example.json"
+USER_POLICY_PATH = Path.home() / ".config" / "github-pr-review-policy" / "review-policy.json"
 
 DEFAULT_POLICY: dict[str, Any] = {
     "reviewFlow": {
@@ -98,6 +99,8 @@ def find_policy_path(path: str | None = None) -> Path | None:
     env_path = os.environ.get("PR_REVIEW_POLICY_PATH")
     if env_path:
         return Path(env_path).expanduser()
+    if USER_POLICY_PATH.exists():
+        return USER_POLICY_PATH
     if DEFAULT_POLICY_PATH.exists():
         return DEFAULT_POLICY_PATH
     if EXAMPLE_POLICY_PATH.exists():
