@@ -25,6 +25,28 @@
       "checkRunPatterns": ["claude", "anthropic"]
     }
   },
+  "repositories": {
+    "OWNER/REPO": {
+      "pullRequestBaseGuidance": {
+        "normalBases": ["main"],
+        "normalMessage": "PR targets the normal trunk branch. A merge enters the normal deployment path.",
+        "informationalBases": {
+          "vibe": "This PR targets an optional direct-deploy/demo branch. It is different from the normal main-to-release pipeline; confirm the user intentionally wants this alternate environment path."
+        },
+        "promotionOnlyBases": {
+          "dev": "Dev is intended to receive releases from the normal deployment pipeline, not as a long-lived GitHub PR branch. Retarget to the normal branch unless the repository explicitly documents a dev branch.",
+          "development": "Development is intended to receive releases from the normal deployment pipeline, not as a long-lived GitHub PR branch. Retarget to the normal branch unless the repository explicitly documents a development branch.",
+          "test": "Test is intended as a deployment environment, not a normal GitHub PR branch. Retarget to the normal branch unless the repository explicitly documents a test branch.",
+          "testing": "Testing is intended as a deployment environment, not a normal GitHub PR branch. Retarget to the normal branch unless the repository explicitly documents a testing branch.",
+          "stage": "Stage is intended as a promotion target in the deployment pipeline, not a normal GitHub PR branch. Retarget to the normal branch and promote the release after validation.",
+          "staging": "Staging is intended as a promotion target in the deployment pipeline, not a normal GitHub PR branch. Retarget to the normal branch and promote the release after validation.",
+          "prod": "Prod is intended as a protected production promotion target, not a GitHub PR branch. Retarget to the normal branch and use the production approval/promotion path.",
+          "production": "Production is intended as a protected production promotion target, not a GitHub PR branch. Retarget to the normal branch and use the production approval/promotion path."
+        },
+        "nonstandardMessage": "PR targets a nonstandard base branch. Explain how this differs from the normal deployment path before proceeding."
+      }
+    }
+  },
   "skipTextPatterns": [
     "usage limit",
     "spend limit",

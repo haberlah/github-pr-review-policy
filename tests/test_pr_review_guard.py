@@ -29,6 +29,8 @@ class ReviewGuardTests(unittest.TestCase):
             "repo": "OWNER/REPO",
             "pr": 123,
             "head_sha": "abcdef1234567890abcdef1234567890abcdef12",
+            "head_ref": "feature/example",
+            "base_ref": "main",
             "state": "open",
             "draft": False,
             "comments": [],
@@ -113,6 +115,70 @@ class ReviewGuardTests(unittest.TestCase):
 
     def test_user_policy_path_precedes_skill_default(self) -> None:
         self.assertTrue(str(self.guard.USER_POLICY_PATH).endswith(".config/github-pr-review-policy/review-policy.json"))
+
+    def test_base_guidance_allows_normal_branch(self) -> None:
+        policy = self.guard.merge_dict(
+            self.guard.DEFAULT_POLICY,
+            {"repositories": {"OWNER/REPO": {"pullRequestBaseGuidance": {"normalBases": ["main"]}}}},
+        )
+        self.guard.configure_policy(policy)
+
+        guidance = self.guard.base_branch_guidance(dict(self.base_state))
+
+        self.assertEqual("normal", guidance["status"])
+        self.assertEqual("none", guidance["severity"])
+
+    def test_vibe_base_is_informational_not_blocking(self) -> None:
+        policy = self.guard.merge_dict(
+            self.guard.DEFAULT_POLICY,
+            {
+                "repositories": {
+                    "OWNER/REPO": {
+                        "pullRequestBaseGuidance": {
+                            "normalBases": ["main"],
+                            "informationalBases": {
+                                "vibe": "Vibe is an optional direct-deploy branch."
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        self.guard.configure_policy(policy)
+        state = dict(self.base_state)
+        state["base_ref"] = "vibe"
+
+        result = self.guard.pre_codex(state, emit_comment_body=False)
+
+        self.assertTrue(result["allow_trigger"])
+        self.assertEqual("informational", result["base_branch_guidance"]["status"])
+        self.assertEqual("info", result["base_branch_guidance"]["severity"])
+
+    def test_stage_base_is_promotion_only_not_blocking(self) -> None:
+        policy = self.guard.merge_dict(
+            self.guard.DEFAULT_POLICY,
+            {
+                "repositories": {
+                    "OWNER/REPO": {
+                        "pullRequestBaseGuidance": {
+                            "normalBases": ["main"],
+                            "promotionOnlyBases": {
+                                "stage": "Stage is a deployment promotion target."
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        self.guard.configure_policy(policy)
+        state = dict(self.base_state)
+        state["base_ref"] = "stage"
+
+        result = self.guard.pre_codex(state, emit_comment_body=False)
+
+        self.assertTrue(result["allow_trigger"])
+        self.assertEqual("promotion_only", result["base_branch_guidance"]["status"])
+        self.assertEqual("warning", result["base_branch_guidance"]["severity"])
 
     def test_public_files_do_not_contain_private_repo_names(self) -> None:
         forbidden = [value.strip() for value in os.environ.get("PR_REVIEW_POLICY_FORBIDDEN_TEXT", "").split(",")]

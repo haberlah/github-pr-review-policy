@@ -137,12 +137,38 @@ Use GitHub for hard enforcement:
 Use this skill for deterministic agent behavior:
 
 - whether to request Codex or Claude,
+- how to explain PR base branches that differ from the normal deployment path,
 - whether Claude is allowed on a repo,
 - whether a review cycle already exists,
 - whether generic no-findings text is verified,
 - whether review evidence is stale or missing.
 
 Keep GitHub App access and `review-policy.json` aligned. If GitHub gives a bot broader access than the policy allows, treat that as configuration drift and fix GitHub or policy before triggering reviews.
+
+### PR Base Guidance
+
+Teams can configure repository-specific PR base-branch guidance under `repositories`.
+This does not block review triggers by itself. It makes Codex/Claude report when a PR
+targets an alternate deploy branch or a deployment-promotion environment.
+
+```json
+{
+  "repositories": {
+    "OWNER/REPO": {
+      "pullRequestBaseGuidance": {
+        "normalBases": ["main"],
+        "informationalBases": {
+          "vibe": "This is an optional direct-deploy/demo branch, not the normal release path."
+        },
+        "promotionOnlyBases": {
+          "stage": "Stage is a deployment promotion target, not a normal PR base branch.",
+          "prod": "Prod is a protected production promotion target, not a PR base branch."
+        }
+      }
+    }
+  }
+}
+```
 
 ## Guard Examples
 
