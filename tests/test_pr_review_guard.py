@@ -100,7 +100,7 @@ class ReviewGuardTests(unittest.TestCase):
 
         self.assertEqual("silent_timeout", result["status"])
 
-    def test_bot_no_findings_with_head_sha_is_verified(self) -> None:
+    def test_bot_no_findings_with_head_sha_is_unverified_without_review_object(self) -> None:
         state = dict(self.base_state)
         state["comments"] = [
             self.comment("human", "@codex review", minutes_ago=10, comment_id=10),
@@ -110,6 +110,29 @@ class ReviewGuardTests(unittest.TestCase):
                 minutes_ago=5,
                 comment_id=11,
             ),
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("generic_unverified", result["status"])
+
+    def test_bot_no_findings_with_head_review_object_is_verified(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment("human", "@codex review", minutes_ago=10, comment_id=10),
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "Codex Review: Didn't find any major issues.\n\nReviewed commit: `abcdef1234`",
+                minutes_ago=5,
+                comment_id=11,
+            ),
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Didn't find any major issues.",
+                minutes_ago=5,
+            )
         ]
 
         result = self.guard.classify_state(state, "codex", timeout_minutes=30)
@@ -132,6 +155,13 @@ class ReviewGuardTests(unittest.TestCase):
                 "To use Codex here, create a Codex account and connect to github",
                 minutes_ago=8,
                 comment_id=20,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                minutes_ago=2,
             )
         ]
         state["review_comments"] = [
@@ -197,7 +227,7 @@ class ReviewGuardTests(unittest.TestCase):
         result = self.guard.pre_codex(state, emit_comment_body=True)
 
         self.assertTrue(result["allow_trigger"])
-        self.assertEqual("review_completed_findings", result["status"])
+        self.assertEqual("in_progress", result["status"])
         self.assertIn(self.base_state["head_sha"], result["comment_body"])
 
     def test_pre_codex_blocks_when_current_head_review_object_exists(self) -> None:

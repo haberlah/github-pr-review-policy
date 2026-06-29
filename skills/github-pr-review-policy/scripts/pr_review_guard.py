@@ -439,34 +439,31 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
     ]
     completed = [c for c in rel["check_runs"] if c.get("status") == "completed"]
     latest_check = latest(rel["check_runs"])
-    latest_review = latest(rel["head_reviews"]) or latest(rel["reviews"])
+    latest_head_review = latest(rel["head_reviews"])
+    latest_any_review = latest(rel["reviews"])
     latest_comment = latest(rel["comments"])
+    trusted_inline_comments = rel["inline_comments"] if rel["head_reviews"] else []
 
     if in_progress:
         status = "in_progress"
-    elif rel["inline_comments"]:
+    elif trusted_inline_comments:
         status = "review_completed_findings"
     elif latest_check and latest_check.get("conclusion") in {"failure", "timed_out", "cancelled", "action_required"}:
         status = "infra_or_review_error"
     elif latest_check and ERROR_RE.search(checkrun_text(latest_check)) and latest_check.get("conclusion") in {"neutral", "failure", "cancelled"}:
         status = "infra_or_review_error"
-    elif latest_review and GENERIC_OK_RE.search(body_text(latest_review)):
-        if latest_check and latest_check.get("status") == "completed" and latest_check.get("conclusion") in {"success", "neutral", "skipped"}:
-            status = "review_completed_no_findings"
-        elif latest_review.get("commit_id") == state["head_sha"]:
-            status = "review_completed_no_findings"
-        else:
-            status = "generic_unverified"
+    elif latest_head_review and GENERIC_OK_RE.search(body_text(latest_head_review)):
+        status = "review_completed_no_findings"
+    elif latest_head_review and body_text(latest_head_review).strip():
+        status = "review_completed_findings"
     elif latest_comment and GENERIC_OK_RE.search(body_text(latest_comment)):
-        if latest_check and latest_check.get("status") == "completed" and latest_check.get("conclusion") in {"success", "neutral", "skipped"}:
-            status = "review_completed_no_findings"
-        elif body_mentions_head(latest_comment, state["head_sha"]):
+        if latest_head_review and body_mentions_head(latest_comment, state["head_sha"]):
             status = "review_completed_no_findings"
         else:
             status = "generic_unverified"
     elif SKIP_RE.search(texts):
         status = "skipped"
-    elif rel["triggers"] and not (rel["head_reviews"] or rel["inline_comments"] or rel["comments"] or rel["check_runs"]):
+    elif rel["triggers"] and not (rel["head_reviews"] or trusted_inline_comments or rel["comments"] or rel["check_runs"]):
         status = "in_progress" if trigger_age is not None and trigger_age < timeout_minutes else "silent_timeout"
     else:
         status = "no_review_evidence"
@@ -488,8 +485,10 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
             "trigger_at": (latest_trigger or {}).get("created_at"),
             "trigger_age_minutes": round(trigger_age, 1) if trigger_age is not None else None,
             "timeout_minutes": timeout_minutes,
-            "review_at": (latest_review or {}).get("submitted_at"),
-            "review_commit": (latest_review or {}).get("commit_id"),
+            "review_at": (latest_head_review or {}).get("submitted_at"),
+            "review_commit": (latest_head_review or {}).get("commit_id"),
+            "latest_any_review_at": (latest_any_review or {}).get("submitted_at"),
+            "latest_any_review_commit": (latest_any_review or {}).get("commit_id"),
             "comment_at": (latest_comment or {}).get("created_at"),
             "check_name": (latest_check or {}).get("name"),
             "check_status": (latest_check or {}).get("status"),
