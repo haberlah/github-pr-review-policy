@@ -444,8 +444,6 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
 
     if in_progress:
         status = "in_progress"
-    elif SKIP_RE.search(texts):
-        status = "skipped"
     elif rel["inline_comments"]:
         status = "review_completed_findings"
     elif latest_check and latest_check.get("conclusion") in {"failure", "timed_out", "cancelled", "action_required"}:
@@ -466,6 +464,8 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
             status = "review_completed_no_findings"
         else:
             status = "generic_unverified"
+    elif SKIP_RE.search(texts):
+        status = "skipped"
     elif rel["triggers"] and not (rel["head_reviews"] or rel["inline_comments"] or rel["comments"] or rel["check_runs"]):
         status = "in_progress" if trigger_age is not None and trigger_age < timeout_minutes else "silent_timeout"
     else:

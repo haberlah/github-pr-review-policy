@@ -47,6 +47,24 @@ class ReviewGuardTests(unittest.TestCase):
             "created_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
         }
 
+    def review(self, login: str, body: str, commit_id: str | None = None, minutes_ago: int = 5):
+        return {
+            "id": 200,
+            "user": {"login": login},
+            "body": body,
+            "commit_id": commit_id or self.base_state["head_sha"],
+            "submitted_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
+        }
+
+    def inline_comment(self, login: str, body: str, commit_id: str | None = None, minutes_ago: int = 5):
+        return {
+            "id": 300,
+            "user": {"login": login},
+            "body": body,
+            "commit_id": commit_id or self.base_state["head_sha"],
+            "created_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
+        }
+
     def test_claude_is_disabled_without_allowed_repos(self) -> None:
         result = self.guard.pre_claude(dict(self.base_state), False, False)
 
@@ -105,6 +123,50 @@ class ReviewGuardTests(unittest.TestCase):
         result = self.guard.classify_state(state, "codex", timeout_minutes=30)
 
         self.assertEqual("generic_unverified", result["status"])
+
+    def test_current_head_inline_findings_take_precedence_over_setup_comment(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "To use Codex here, create a Codex account and connect to github",
+                minutes_ago=8,
+                comment_id=20,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Generated inventory is stale and needs to be regenerated.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("review_completed_findings", result["status"])
+
+    def test_current_head_no_findings_review_takes_precedence_over_setup_comment(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "To use Codex here, create a Codex account and connect to github",
+                minutes_ago=8,
+                comment_id=21,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Didn't find any major issues.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("review_completed_no_findings", result["status"])
 
     def test_policy_json_has_no_enabled_claude_repos_by_default(self) -> None:
         policy_path = REPO_ROOT / "skills" / "github-pr-review-policy" / "references" / "review-policy.json"
