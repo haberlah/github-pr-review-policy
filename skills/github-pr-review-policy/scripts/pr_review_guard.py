@@ -421,27 +421,37 @@ def collect_text(items: list[dict[str, Any]], *, check_run: bool = False) -> str
     return "\n".join(body_text(i) for i in items)
 
 
+def not_before(items: list[dict[str, Any]], start: dt.datetime | None) -> list[dict[str, Any]]:
+    if start is None:
+        return items
+    return [item for item in items if item_time(item) >= start]
+
+
 def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -> dict[str, Any]:
     rel = relevant_items(state, bot)
-    latest_trigger = latest(rel["triggers"])
+    latest_trigger = latest(rel["head_markers"]) or latest(rel["triggers"])
+    trigger_time = item_time(latest_trigger) if latest_trigger else None
     trigger_age = age_minutes(latest_trigger)
+    post_trigger_comments = not_before(rel["comments"], trigger_time)
+    post_trigger_reviews = not_before(rel["reviews"], trigger_time)
+    post_trigger_checks = not_before(rel["check_runs"], trigger_time)
     texts = "\n".join(
         [
-            collect_text(rel["comments"]),
-            collect_text(rel["reviews"]),
-            collect_text(rel["check_runs"], check_run=True),
+            collect_text(post_trigger_comments),
+            collect_text(post_trigger_reviews),
+            collect_text(post_trigger_checks, check_run=True),
         ]
     )
 
     in_progress = [
-        c for c in rel["check_runs"]
+        c for c in post_trigger_checks
         if c.get("status") in {"queued", "in_progress", "waiting", "requested", "pending"}
     ]
-    completed = [c for c in rel["check_runs"] if c.get("status") == "completed"]
-    latest_check = latest(rel["check_runs"])
+    completed = [c for c in post_trigger_checks if c.get("status") == "completed"]
+    latest_check = latest(post_trigger_checks)
     latest_head_review = latest(rel["head_reviews"])
     latest_any_review = latest(rel["reviews"])
-    latest_comment = latest(rel["comments"])
+    latest_comment = latest(post_trigger_comments)
     trusted_inline_comments = rel["inline_comments"] if rel["head_reviews"] else []
 
     if in_progress:
@@ -463,7 +473,7 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
             status = "generic_unverified"
     elif SKIP_RE.search(texts):
         status = "skipped"
-    elif rel["triggers"] and not (rel["head_reviews"] or trusted_inline_comments or rel["comments"] or rel["check_runs"]):
+    elif rel["triggers"] and not (rel["head_reviews"] or trusted_inline_comments or post_trigger_comments or post_trigger_checks):
         status = "in_progress" if trigger_age is not None and trigger_age < timeout_minutes else "silent_timeout"
     else:
         status = "no_review_evidence"

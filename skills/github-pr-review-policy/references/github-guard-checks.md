@@ -46,11 +46,11 @@ List endpoints are paginated.
 
 - `review_completed_findings`: a current-head bot review object exists and has findings, including trusted inline comments from that review cycle.
 - `review_completed_no_findings`: a current-head bot review object exists and the review or a same-head bot result comment indicates no findings.
-- `in_progress`: relevant check-run is queued/in progress, or a trigger is newer than `--timeout-minutes` and no result has appeared yet.
+- `in_progress`: relevant check-run is queued/in progress, or a current-head trigger is newer than `--timeout-minutes` and no result has appeared after that trigger.
 - `skipped`: bot text says review was skipped, disabled, not configured, blocked by limits, or similar.
 - `infra_or_review_error`: relevant check-run failed or completed with an error-like neutral result.
 - `generic_unverified`: a generic positive/no-findings message exists, but there is no current-head submitted review object proving the bot review ran for the current head.
-- `silent_timeout`: trigger exists but there is no bot review, bot result comment, or check-run evidence after `--timeout-minutes`.
+- `silent_timeout`: a current-head trigger exists but there is no bot review, bot result comment, or check-run evidence after `--timeout-minutes`.
 - `trigger_comment_not_found`: `--trigger-comment-id` was provided but no matching issue comment exists.
 - `head_changed_after_trigger`: `--trigger-head-sha` differs from the current PR head.
 - `no_review_evidence`: no matching trigger or bot evidence.

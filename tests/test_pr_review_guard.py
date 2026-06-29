@@ -147,6 +147,32 @@ class ReviewGuardTests(unittest.TestCase):
 
         self.assertEqual("generic_unverified", result["status"])
 
+    def test_fresh_head_trigger_ignores_older_generic_bot_comment_until_timeout(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "Codex Review: Didn't find any major issues.\n\nReviewed commit: `oldsha1234`",
+                minutes_ago=60,
+                comment_id=15,
+            ),
+            self.comment(
+                "human",
+                "@codex review\n\n<!-- pr-review-guard provider=codex head_sha=abcdef1234567890abcdef1234567890abcdef12 scope=head -->",
+                minutes_ago=5,
+                comment_id=16,
+            ),
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("in_progress", result["status"])
+
+        state["comments"][1]["created_at"] = (self.now - dt.timedelta(minutes=45)).isoformat()
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("silent_timeout", result["status"])
+
     def test_current_head_inline_findings_take_precedence_over_setup_comment(self) -> None:
         state = dict(self.base_state)
         state["comments"] = [
