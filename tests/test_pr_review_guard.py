@@ -168,6 +168,60 @@ class ReviewGuardTests(unittest.TestCase):
 
         self.assertEqual("review_completed_no_findings", result["status"])
 
+    def test_pre_codex_allows_trigger_when_inline_comment_migrates_without_head_review(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "human",
+                "@codex review\n\n<!-- pr-review-guard provider=codex head_sha=oldsha scope=head -->",
+                minutes_ago=5,
+                comment_id=30,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                commit_id="oldsha",
+                minutes_ago=3,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Line moved but this is not backed by a current-head review object.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.pre_codex(state, emit_comment_body=True)
+
+        self.assertTrue(result["allow_trigger"])
+        self.assertEqual("review_completed_findings", result["status"])
+        self.assertIn(self.base_state["head_sha"], result["comment_body"])
+
+    def test_pre_codex_blocks_when_current_head_review_object_exists(self) -> None:
+        state = dict(self.base_state)
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                minutes_ago=3,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Current-head finding.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.pre_codex(state, emit_comment_body=True)
+
+        self.assertFalse(result["allow_trigger"])
+        self.assertNotIn("comment_body", result)
+
     def test_policy_json_has_no_enabled_claude_repos_by_default(self) -> None:
         policy_path = REPO_ROOT / "skills" / "github-pr-review-policy" / "references" / "review-policy.json"
         policy = json.loads(policy_path.read_text())

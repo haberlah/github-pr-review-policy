@@ -513,17 +513,21 @@ def pre_codex(state: dict[str, Any], emit_comment_body: bool, timeout_minutes: i
     if state["draft"]:
         allow = False
         reasons.append("PR is draft")
-    if rel["head_markers"]:
+    has_current_head_review = bool(rel["head_reviews"])
+    has_current_head_marker = bool(rel["head_markers"])
+
+    if has_current_head_marker:
         allow = False
         reasons.append("A Codex trigger marker already exists for the current head")
-    if classification["status"] in {
-        "in_progress",
-        "review_completed_findings",
-        "review_completed_no_findings",
-        "generic_unverified",
-    }:
+    if classification["status"] == "in_progress" and has_current_head_marker:
         allow = False
-        reasons.append(f"Codex status is {classification['status']} on current head or needs verification")
+        reasons.append("Codex review is already in progress for the current head")
+    if classification["status"] in {"review_completed_findings", "review_completed_no_findings"} and has_current_head_review:
+        allow = False
+        reasons.append(f"Codex status is {classification['status']} with a current-head review object")
+    if classification["status"] == "generic_unverified" and has_current_head_review:
+        allow = False
+        reasons.append("Codex review object exists but no-findings text still needs verification")
 
     if allow:
         reasons.append(f"No current-head Codex review evidence found; trigger {TRIGGER_TEXT['codex']}")
