@@ -421,52 +421,59 @@ def collect_text(items: list[dict[str, Any]], *, check_run: bool = False) -> str
     return "\n".join(body_text(i) for i in items)
 
 
+def not_before(items: list[dict[str, Any]], start: dt.datetime | None) -> list[dict[str, Any]]:
+    if start is None:
+        return items
+    return [item for item in items if item_time(item) >= start]
+
+
 def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -> dict[str, Any]:
     rel = relevant_items(state, bot)
-    latest_trigger = latest(rel["triggers"])
+    latest_trigger = latest(rel["head_markers"]) or latest(rel["triggers"])
+    trigger_time = item_time(latest_trigger) if latest_trigger else None
     trigger_age = age_minutes(latest_trigger)
+    post_trigger_comments = not_before(rel["comments"], trigger_time)
+    post_trigger_reviews = not_before(rel["reviews"], trigger_time)
+    post_trigger_checks = not_before(rel["check_runs"], trigger_time)
     texts = "\n".join(
         [
-            collect_text(rel["comments"]),
-            collect_text(rel["reviews"]),
-            collect_text(rel["check_runs"], check_run=True),
+            collect_text(post_trigger_comments),
+            collect_text(post_trigger_reviews),
+            collect_text(post_trigger_checks, check_run=True),
         ]
     )
 
     in_progress = [
-        c for c in rel["check_runs"]
+        c for c in post_trigger_checks
         if c.get("status") in {"queued", "in_progress", "waiting", "requested", "pending"}
     ]
-    completed = [c for c in rel["check_runs"] if c.get("status") == "completed"]
-    latest_check = latest(rel["check_runs"])
-    latest_review = latest(rel["head_reviews"]) or latest(rel["reviews"])
-    latest_comment = latest(rel["comments"])
+    completed = [c for c in post_trigger_checks if c.get("status") == "completed"]
+    latest_check = latest(post_trigger_checks)
+    latest_head_review = latest(rel["head_reviews"])
+    latest_any_review = latest(rel["reviews"])
+    latest_comment = latest(post_trigger_comments)
+    trusted_inline_comments = rel["inline_comments"] if rel["head_reviews"] else []
 
     if in_progress:
         status = "in_progress"
-    elif SKIP_RE.search(texts):
-        status = "skipped"
-    elif rel["inline_comments"]:
+    elif trusted_inline_comments:
         status = "review_completed_findings"
     elif latest_check and latest_check.get("conclusion") in {"failure", "timed_out", "cancelled", "action_required"}:
         status = "infra_or_review_error"
     elif latest_check and ERROR_RE.search(checkrun_text(latest_check)) and latest_check.get("conclusion") in {"neutral", "failure", "cancelled"}:
         status = "infra_or_review_error"
-    elif latest_review and GENERIC_OK_RE.search(body_text(latest_review)):
-        if latest_check and latest_check.get("status") == "completed" and latest_check.get("conclusion") in {"success", "neutral", "skipped"}:
-            status = "review_completed_no_findings"
-        elif latest_review.get("commit_id") == state["head_sha"]:
-            status = "review_completed_no_findings"
-        else:
-            status = "generic_unverified"
+    elif latest_head_review and GENERIC_OK_RE.search(body_text(latest_head_review)):
+        status = "review_completed_no_findings"
+    elif latest_head_review and body_text(latest_head_review).strip():
+        status = "review_completed_findings"
     elif latest_comment and GENERIC_OK_RE.search(body_text(latest_comment)):
-        if latest_check and latest_check.get("status") == "completed" and latest_check.get("conclusion") in {"success", "neutral", "skipped"}:
-            status = "review_completed_no_findings"
-        elif body_mentions_head(latest_comment, state["head_sha"]):
+        if latest_head_review and body_mentions_head(latest_comment, state["head_sha"]):
             status = "review_completed_no_findings"
         else:
             status = "generic_unverified"
-    elif rel["triggers"] and not (rel["head_reviews"] or rel["inline_comments"] or rel["comments"] or rel["check_runs"]):
+    elif SKIP_RE.search(texts):
+        status = "skipped"
+    elif rel["triggers"] and not (rel["head_reviews"] or trusted_inline_comments or post_trigger_comments or post_trigger_checks):
         status = "in_progress" if trigger_age is not None and trigger_age < timeout_minutes else "silent_timeout"
     else:
         status = "no_review_evidence"
@@ -488,8 +495,10 @@ def classify_state(state: dict[str, Any], bot: str, timeout_minutes: int = 30) -
             "trigger_at": (latest_trigger or {}).get("created_at"),
             "trigger_age_minutes": round(trigger_age, 1) if trigger_age is not None else None,
             "timeout_minutes": timeout_minutes,
-            "review_at": (latest_review or {}).get("submitted_at"),
-            "review_commit": (latest_review or {}).get("commit_id"),
+            "review_at": (latest_head_review or {}).get("submitted_at"),
+            "review_commit": (latest_head_review or {}).get("commit_id"),
+            "latest_any_review_at": (latest_any_review or {}).get("submitted_at"),
+            "latest_any_review_commit": (latest_any_review or {}).get("commit_id"),
             "comment_at": (latest_comment or {}).get("created_at"),
             "check_name": (latest_check or {}).get("name"),
             "check_status": (latest_check or {}).get("status"),
@@ -513,17 +522,21 @@ def pre_codex(state: dict[str, Any], emit_comment_body: bool, timeout_minutes: i
     if state["draft"]:
         allow = False
         reasons.append("PR is draft")
-    if rel["head_markers"]:
+    has_current_head_review = bool(rel["head_reviews"])
+    has_current_head_marker = bool(rel["head_markers"])
+
+    if has_current_head_marker:
         allow = False
         reasons.append("A Codex trigger marker already exists for the current head")
-    if classification["status"] in {
-        "in_progress",
-        "review_completed_findings",
-        "review_completed_no_findings",
-        "generic_unverified",
-    }:
+    if classification["status"] == "in_progress" and has_current_head_marker:
         allow = False
-        reasons.append(f"Codex status is {classification['status']} on current head or needs verification")
+        reasons.append("Codex review is already in progress for the current head")
+    if classification["status"] in {"review_completed_findings", "review_completed_no_findings"} and has_current_head_review:
+        allow = False
+        reasons.append(f"Codex status is {classification['status']} with a current-head review object")
+    if classification["status"] == "generic_unverified" and has_current_head_review:
+        allow = False
+        reasons.append("Codex review object exists but no-findings text still needs verification")
 
     if allow:
         reasons.append(f"No current-head Codex review evidence found; trigger {TRIGGER_TEXT['codex']}")

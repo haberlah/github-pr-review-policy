@@ -47,6 +47,24 @@ class ReviewGuardTests(unittest.TestCase):
             "created_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
         }
 
+    def review(self, login: str, body: str, commit_id: str | None = None, minutes_ago: int = 5):
+        return {
+            "id": 200,
+            "user": {"login": login},
+            "body": body,
+            "commit_id": commit_id or self.base_state["head_sha"],
+            "submitted_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
+        }
+
+    def inline_comment(self, login: str, body: str, commit_id: str | None = None, minutes_ago: int = 5):
+        return {
+            "id": 300,
+            "user": {"login": login},
+            "body": body,
+            "commit_id": commit_id or self.base_state["head_sha"],
+            "created_at": (self.now - dt.timedelta(minutes=minutes_ago)).isoformat(),
+        }
+
     def test_claude_is_disabled_without_allowed_repos(self) -> None:
         result = self.guard.pre_claude(dict(self.base_state), False, False)
 
@@ -82,7 +100,7 @@ class ReviewGuardTests(unittest.TestCase):
 
         self.assertEqual("silent_timeout", result["status"])
 
-    def test_bot_no_findings_with_head_sha_is_verified(self) -> None:
+    def test_bot_no_findings_with_head_sha_is_unverified_without_review_object(self) -> None:
         state = dict(self.base_state)
         state["comments"] = [
             self.comment("human", "@codex review", minutes_ago=10, comment_id=10),
@@ -96,6 +114,29 @@ class ReviewGuardTests(unittest.TestCase):
 
         result = self.guard.classify_state(state, "codex", timeout_minutes=30)
 
+        self.assertEqual("generic_unverified", result["status"])
+
+    def test_bot_no_findings_with_head_review_object_is_verified(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment("human", "@codex review", minutes_ago=10, comment_id=10),
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "Codex Review: Didn't find any major issues.\n\nReviewed commit: `abcdef1234`",
+                minutes_ago=5,
+                comment_id=11,
+            ),
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Didn't find any major issues.",
+                minutes_ago=5,
+            )
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
         self.assertEqual("review_completed_no_findings", result["status"])
 
     def test_generic_bot_comment_without_head_evidence_is_unverified(self) -> None:
@@ -105,6 +146,137 @@ class ReviewGuardTests(unittest.TestCase):
         result = self.guard.classify_state(state, "codex", timeout_minutes=30)
 
         self.assertEqual("generic_unverified", result["status"])
+
+    def test_fresh_head_trigger_ignores_older_generic_bot_comment_until_timeout(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "Codex Review: Didn't find any major issues.\n\nReviewed commit: `oldsha1234`",
+                minutes_ago=60,
+                comment_id=15,
+            ),
+            self.comment(
+                "human",
+                "@codex review\n\n<!-- pr-review-guard provider=codex head_sha=abcdef1234567890abcdef1234567890abcdef12 scope=head -->",
+                minutes_ago=5,
+                comment_id=16,
+            ),
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("in_progress", result["status"])
+
+        state["comments"][1]["created_at"] = (self.now - dt.timedelta(minutes=45)).isoformat()
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("silent_timeout", result["status"])
+
+    def test_current_head_inline_findings_take_precedence_over_setup_comment(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "To use Codex here, create a Codex account and connect to github",
+                minutes_ago=8,
+                comment_id=20,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                minutes_ago=2,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Generated inventory is stale and needs to be regenerated.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("review_completed_findings", result["status"])
+
+    def test_current_head_no_findings_review_takes_precedence_over_setup_comment(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "chatgpt-codex-connector[bot]",
+                "To use Codex here, create a Codex account and connect to github",
+                minutes_ago=8,
+                comment_id=21,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Didn't find any major issues.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.classify_state(state, "codex", timeout_minutes=30)
+
+        self.assertEqual("review_completed_no_findings", result["status"])
+
+    def test_pre_codex_allows_trigger_when_inline_comment_migrates_without_head_review(self) -> None:
+        state = dict(self.base_state)
+        state["comments"] = [
+            self.comment(
+                "human",
+                "@codex review\n\n<!-- pr-review-guard provider=codex head_sha=oldsha scope=head -->",
+                minutes_ago=5,
+                comment_id=30,
+            )
+        ]
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                commit_id="oldsha",
+                minutes_ago=3,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Line moved but this is not backed by a current-head review object.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.pre_codex(state, emit_comment_body=True)
+
+        self.assertTrue(result["allow_trigger"])
+        self.assertEqual("in_progress", result["status"])
+        self.assertIn(self.base_state["head_sha"], result["comment_body"])
+
+    def test_pre_codex_blocks_when_current_head_review_object_exists(self) -> None:
+        state = dict(self.base_state)
+        state["reviews"] = [
+            self.review(
+                "chatgpt-codex-connector[bot]",
+                "Automated review suggestions.",
+                minutes_ago=3,
+            )
+        ]
+        state["review_comments"] = [
+            self.inline_comment(
+                "chatgpt-codex-connector[bot]",
+                "Current-head finding.",
+                minutes_ago=2,
+            )
+        ]
+
+        result = self.guard.pre_codex(state, emit_comment_body=True)
+
+        self.assertFalse(result["allow_trigger"])
+        self.assertNotIn("comment_body", result)
 
     def test_policy_json_has_no_enabled_claude_repos_by_default(self) -> None:
         policy_path = REPO_ROOT / "skills" / "github-pr-review-policy" / "references" / "review-policy.json"
